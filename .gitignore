@@ -1,4 +1,5 @@
 *.mp3
+yt2mp3/.cache/
 
 # Default ignored files
 /shelf/
