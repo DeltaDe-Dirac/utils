@@ -50,17 +50,17 @@ coverage:
 # Lint code
 lint:
 	@echo "Running flake8 linter..."
-	@flake8 yt2mp3/ tests/ --max-line-length=100 --show-source --statistics
+	@flake8 yt_to_mp3.py tests/ --max-line-length=100 --show-source --statistics
 
 # Format code
 format:
 	@echo "Formatting code with black..."
-	@black yt2mp3/ tests/ --line-length=100
+	@black yt_to_mp3.py tests/ --line-length=100
 
 # Type checking
 typecheck:
 	@echo "Running mypy type checker..."
-	@mypy yt2mp3/ --ignore-missing-imports
+	@mypy yt_to_mp3.py --ignore-missing-imports
 
 # Clean build artifacts
 clean:
