@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "yt2mp3"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import functions to test
 # Note: We import specific functions to avoid side effects from main()
@@ -19,7 +19,7 @@ import importlib.util
 
 # Load the module dynamically
 spec = importlib.util.spec_from_file_location(
-    "yt_to_mp3", str(Path(__file__).parent.parent / "yt2mp3" / "yt_to_mp3.py")
+    "yt_to_mp3", str(Path(__file__).parent / "yt_to_mp3.py")
 )
 yt_to_mp3 = importlib.util.module_from_spec(spec)
 
