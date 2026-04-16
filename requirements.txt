@@ -1,0 +1,15 @@
+# yt2mp3 - YouTube to MP3 Converter
+# Python dependencies (optional, most dependencies are system binaries)
+
+# Core dependencies (installed via setup scripts)
+# yt-dlp and ffmpeg are system binaries, not Python packages
+
+# Optional: For development and testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Note: Run setup.sh (Linux/macOS) or setup.bat (Windows) to install
+# system dependencies (yt-dlp, ffmpeg) before using this tool.

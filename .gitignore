@@ -1,6 +1,13 @@
 *.mp3
 yt2mp3/.cache/
 
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+
 # Default ignored files
 /shelf/
 /workspace.xml
