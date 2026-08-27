@@ -29,6 +29,7 @@ Upload local files to a Google Drive folder by name or ID, with quota checks and
 ```bash
 cd gdrive
 pip install -r requirements.txt
+python generate_token.py          # browser once; writes token.json
 python upload.py /path/to/file.jpg MyFolder
 ```
 

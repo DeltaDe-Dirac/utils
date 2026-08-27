@@ -35,7 +35,22 @@ pip install -r requirements.txt
 
 Do not commit `credentials.json` or `token.json`. They are secrets.
 
-#### 3. Upload a file
+#### 3. Generate `token.json` (needs a browser)
+
+Run this **on a machine with a browser**, from `gdrive/`:
+
+```bash
+cd gdrive
+python generate_token.py
+```
+
+This opens Google sign-in (`run_local_server`), writes `token.json`, and lists 10 Drive files as a smoke test.
+
+- **Keep `token.json`.** That is the reusable login (refresh). Copy it to the runtime `gdrive/` if you authorized on another machine.
+- **`credentials.json` is only needed to mint or replace `token.json`** (first run, or after `invalid_grant`). You can omit it on later uploads once `token.json` refreshes cleanly.
+- Scope is **full Drive** (`https://www.googleapis.com/auth/drive`), same as `upload.py`. A metadata-readonly token cannot upload. If you change scopes, delete `token.json` and run `generate_token.py` again.
+
+#### 4. Upload a file
 
 **By folder name:**
 ```bash
@@ -57,7 +72,7 @@ python gdrive/upload.py /path/to/file.jpg MyFolder --override
 python gdrive/upload.py /path/to/file.jpg MyFolder --delete-source
 ```
 
-The first run opens a local browser window for Google sign-in. After that, `token.json` is reused (and refreshed when expired).
+If `token.json` is missing or cannot refresh, run `python generate_token.py` instead of hoping `upload.py` can complete a headless browser flow.
 
 ### 📖 Usage
 
@@ -100,6 +115,8 @@ optional arguments:
 ```
 utils/
 ├── gdrive/
+│   ├── generate_token.py  # Browser OAuth; writes token.json
+│   ├── oauth.py           # Shared scopes + credential load/refresh
 │   ├── upload.py          # Upload CLI
 │   ├── requirements.txt   # Google API client libraries
 │   ├── credentials.json   # OAuth client secret (local only)
