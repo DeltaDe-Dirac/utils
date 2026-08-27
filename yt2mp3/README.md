@@ -12,6 +12,7 @@ Convert YouTube videos to high-quality MP3 files with intelligent caching, metad
 
 - **Full video or trimmed clips** - Export entire videos or specific sections
 - **Smart caching** - Download once, trim multiple times from cached source
+- **Cache cap** - Source cache (`yt2mp3/.cache/`) is pruned to 3 GiB by default, oldest files first
 - **Metadata embedding** - Includes title and artist information in MP3
 - **Progress indicators** - Real-time download and conversion progress
 - **Playlist detection** - Warns and rejects playlist URLs (single videos only)
@@ -67,7 +68,7 @@ python yt2mp3/yt_to_mp3.py "https://youtube.com/watch?v=VIDEO_ID" -v
 
 ```
 usage: yt_to_mp3.py [-h] [-o OUTPUT_DIR] [-q QUALITY] [--min-duration MIN_DURATION] 
-                    [-v] [--no-cache] url [start_time] [end_time]
+                    [-v] [--no-cache] [--cache-max-size SIZE] url [start_time] [end_time]
 
 Convert a YouTube video (or trimmed section) to high-quality MP3 with metadata 
 embedding and intelligent caching.
@@ -84,6 +85,13 @@ optional arguments:
   --min-duration SEC    Minimum clip duration in seconds (default: 5)
   -v, --verbose         Enable verbose/debug logging
   --no-cache            Disable caching, always re-download source audio
+  --cache-max-size SIZE Maximum source-cache size (e.g. 50M, 3G, or raw bytes).
+                        Default: 3GiB. Oldest files are deleted first.
+```
+
+**Limit cache size (ops/tests):**
+```bash
+python yt2mp3/yt_to_mp3.py "https://youtube.com/watch?v=VIDEO_ID" --cache-max-size 50M
 ```
 
 ### 📁 Output Files
@@ -107,7 +115,8 @@ Files are written to the specified output directory (or script directory by defa
 
 - **Playlist URLs are not supported** - Only single video URLs work
 - **Minimum duration** - Clips must be at least 5 seconds (configurable)
-- **Cache location** - Cached files stored in `yt2mp3/.cache/`
+- **Cache location** - Cached source audio is stored in `yt2mp3/.cache/`
+- **Cache cap** - After each successful download or cache hit, files in `.cache/` are pruned oldest-mtime-first until the total is at most **3 GiB** (`3 * 1024**3` bytes). Override with `--cache-max-size` (`50M`, `3G`, or raw bytes). Finished MP3s in `output/` are never auto-deleted.
 - **Region restrictions** - Some videos may be unavailable in certain countries
 
 ---

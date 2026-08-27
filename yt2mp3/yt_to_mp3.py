@@ -44,6 +44,17 @@ PLAYLIST_PATTERNS = [r"&list=", r"/playlist\?", r"&playlist="]
 # Configurable via environment or args
 DEFAULT_MIN_DURATION_SECONDS = 5
 DEFAULT_AUDIO_QUALITY = "320K"
+DEFAULT_CACHE_MAX_SIZE = 3 * 1024**3  # 3 GiB
+_CACHE_SIZE_PATTERN = re.compile(r"^(\d+)([KMGkmg])?$")
+_CACHE_SIZE_MULTIPLIERS = {
+    None: 1,
+    "K": 1024,
+    "k": 1024,
+    "M": 1024**2,
+    "m": 1024**2,
+    "G": 1024**3,
+    "g": 1024**3,
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -355,6 +366,24 @@ def validate_range(start: int, end: int, duration: int, min_duration: int) -> No
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def parse_cache_max_size(value: str) -> int:
+    """
+    Parse a human cache size (50M, 3G) or a raw byte count.
+
+    Uses binary units: K=1024, M=1024**2, G=1024**3.
+    """
+    text = str(value).strip()
+    match = _CACHE_SIZE_PATTERN.fullmatch(text)
+    if not match:
+        raise ValueError(
+            f"Invalid cache size '{value}'. Expected raw bytes or a size like "
+            "'50M' or '3G'."
+        )
+    amount = int(match.group(1))
+    suffix = match.group(2)
+    return amount * _CACHE_SIZE_MULTIPLIERS[suffix]
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build and configure argument parser."""
     parser = argparse.ArgumentParser(
@@ -415,6 +444,16 @@ Examples:
         action="store_true",
         help="Disable caching, always re-download source audio",
     )
+    parser.add_argument(
+        "--cache-max-size",
+        type=parse_cache_max_size,
+        default=DEFAULT_CACHE_MAX_SIZE,
+        metavar="SIZE",
+        help=(
+            "Maximum size of the source cache directory (e.g. 50M, 3G, or raw "
+            "bytes). Default: 3GiB. Oldest files are pruned first."
+        ),
+    )
     return parser
 
 
@@ -454,6 +493,68 @@ def build_output_path(
 # ─────────────────────────────────────────────────────────────────────────────
 # Cache Management
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def prune_cache(
+    cache_dir: Path, max_size: int, keep: Optional[Path] = None
+) -> None:
+    """
+    Delete oldest files in cache_dir (by mtime) until total size is <= max_size.
+
+    The current job's file (`keep`) is skipped until last, and is only removed
+    if it alone still exceeds the cap. Finished MP3s outside cache_dir are
+    never touched.
+    """
+    if not cache_dir.exists() or not cache_dir.is_dir():
+        return
+
+    files = [path for path in cache_dir.iterdir() if path.is_file()]
+    if not files:
+        return
+
+    def file_size(path: Path) -> int:
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+
+    total = sum(file_size(path) for path in files)
+    if total <= max_size:
+        return
+
+    keep_resolved: Optional[Path] = None
+    if keep is not None:
+        try:
+            keep_resolved = keep.resolve()
+        except OSError:
+            keep_resolved = keep
+
+    def sort_key(path: Path) -> tuple:
+        is_keep = False
+        if keep_resolved is not None:
+            try:
+                is_keep = path.resolve() == keep_resolved
+            except OSError:
+                is_keep = path == keep
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        # keep=True sorts after other files so the current job is deleted last
+        return (is_keep, mtime)
+
+    files.sort(key=sort_key)
+    for path in files:
+        if total <= max_size:
+            break
+        size = file_size(path)
+        try:
+            path.unlink()
+        except OSError as exc:
+            logger.warning(f"Failed to prune cache file {path.name}: {exc}")
+            continue
+        total -= size
+        logger.info(f"Pruned cache file ({size} bytes): {path.name}")
 
 
 def resolve_cached_source_path(cache_dir: Path, video_id: str) -> Optional[Path]:
@@ -671,6 +772,7 @@ def main() -> None:
     source_path = download_source_audio(
         args.url, cache_dir, str(video_info["id"]), no_cache=args.no_cache
     )
+    prune_cache(cache_dir, args.cache_max_size, keep=source_path)
 
     # Export MP3 with metadata
     export_mp3(
