@@ -21,6 +21,21 @@ python yt_to_mp3.py "https://youtube.com/watch?v=VIDEO_ID"
 
 ---
 
+### ☁️ gdrive
+
+Upload local files to a Google Drive folder by name or ID, with quota checks and optional overwrite.
+
+**Quick Start:**
+```bash
+cd gdrive
+pip install -r requirements.txt
+python upload.py /path/to/file.jpg MyFolder
+```
+
+📖 [Full Documentation →](gdrive/README.md)
+
+---
+
 ## 🚀 Adding New Scripts
 
 Each utility should:
