@@ -1,5 +1,11 @@
 *.mp3
 yt2mp3/.cache/
+yt2mp3/output/
+
+# gdrive secrets and local venv — never commit
+gdrive/credentials.json
+gdrive/token.json
+gdrive/.venv/
 
 # Test artifacts
 .pytest_cache/
