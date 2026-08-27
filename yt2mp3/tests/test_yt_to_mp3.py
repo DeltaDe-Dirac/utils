@@ -4,6 +4,9 @@ Unit tests for yt2mp3 utility.
 
 Run with: pytest tests/test_yt_to_mp3.py -v
 """
+import os
+import time
+
 import pytest
 import sys
 import re
@@ -17,11 +20,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Note: We import specific functions to avoid side effects from main()
 import importlib.util
 
-# Load the module dynamically
-spec = importlib.util.spec_from_file_location(
-    "yt_to_mp3", str(Path(__file__).parent / "yt_to_mp3.py")
-)
+# Load the module dynamically from the package root (not tests/).
+_MODULE_PATH = Path(__file__).resolve().parent.parent / "yt_to_mp3.py"
+spec = importlib.util.spec_from_file_location("yt_to_mp3", _MODULE_PATH)
 yt_to_mp3 = importlib.util.module_from_spec(spec)
+sys.modules["yt_to_mp3"] = yt_to_mp3
+spec.loader.exec_module(yt_to_mp3)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -316,6 +320,145 @@ class TestIntegration:
         if func:
             with pytest.raises(SystemExit):
                 func()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache size parsing
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestParseCacheMaxSize:
+    """Parse --cache-max-size human sizes and raw bytes."""
+
+    def test_parse_raw_bytes(self):
+        assert yt_to_mp3.parse_cache_max_size("1024") == 1024
+        assert yt_to_mp3.parse_cache_max_size("0") == 0
+
+    def test_parse_mebibyte_suffix(self):
+        assert yt_to_mp3.parse_cache_max_size("50M") == 50 * 1024**2
+        assert yt_to_mp3.parse_cache_max_size("5m") == 5 * 1024**2
+
+    def test_parse_gibibyte_suffix(self):
+        assert yt_to_mp3.parse_cache_max_size("3G") == 3 * 1024**3
+        assert yt_to_mp3.parse_cache_max_size("1g") == 1024**3
+
+    def test_parse_kibibyte_suffix(self):
+        assert yt_to_mp3.parse_cache_max_size("2K") == 2 * 1024
+
+    def test_reject_invalid_size(self):
+        with pytest.raises(ValueError):
+            yt_to_mp3.parse_cache_max_size("abc")
+        with pytest.raises(ValueError):
+            yt_to_mp3.parse_cache_max_size("-1")
+        with pytest.raises(ValueError):
+            yt_to_mp3.parse_cache_max_size("3T")
+
+    def test_default_cache_cap_is_3_gib(self):
+        assert yt_to_mp3.DEFAULT_CACHE_MAX_SIZE == 3 * 1024**3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache pruning
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _write_sized_file(path: Path, size: int, mtime: float) -> Path:
+    path.write_bytes(b"x" * size)
+    os.utime(path, (mtime, mtime))
+    return path
+
+
+def _cache_total_bytes(cache_dir: Path) -> int:
+    return sum(p.stat().st_size for p in cache_dir.iterdir() if p.is_file())
+
+
+class TestPruneCache:
+    """Prune yt2mp3/.cache/ oldest-first until total size is <= cap."""
+
+    def test_prune_deletes_oldest_keeps_newest_under_low_cap(self, tmp_path):
+        cache_dir = tmp_path / ".cache"
+        cache_dir.mkdir()
+        now = time.time()
+        size = 2 * 1024 * 1024  # 2 MiB each
+        oldest = _write_sized_file(cache_dir / "oldest.bin", size, now - 300)
+        middle = _write_sized_file(cache_dir / "middle.bin", size, now - 200)
+        newest = _write_sized_file(cache_dir / "newest.bin", size, now - 100)
+        cap = 5 * 1024 * 1024  # 5 MiB — 6 MiB total, drop oldest
+
+        yt_to_mp3.prune_cache(cache_dir, cap)
+
+        assert not oldest.exists()
+        assert middle.exists()
+        assert newest.exists()
+        assert _cache_total_bytes(cache_dir) <= cap
+
+    def test_prune_keeps_current_job_file_until_last(self, tmp_path):
+        cache_dir = tmp_path / ".cache"
+        cache_dir.mkdir()
+        now = time.time()
+        size = 2 * 1024 * 1024
+        keep = _write_sized_file(cache_dir / "keep.bin", size, now - 300)
+        other_old = _write_sized_file(cache_dir / "other_old.bin", size, now - 200)
+        other_new = _write_sized_file(cache_dir / "other_new.bin", size, now - 100)
+        cap = 3 * 1024 * 1024  # 3 MiB — must drop both others, keep current
+
+        yt_to_mp3.prune_cache(cache_dir, cap, keep=keep)
+
+        assert keep.exists()
+        assert not other_old.exists()
+        assert not other_new.exists()
+        assert _cache_total_bytes(cache_dir) <= cap
+
+    def test_prune_deletes_keep_last_when_it_alone_exceeds_cap(self, tmp_path):
+        cache_dir = tmp_path / ".cache"
+        cache_dir.mkdir()
+        now = time.time()
+        keep = _write_sized_file(cache_dir / "huge.bin", 4 * 1024 * 1024, now - 300)
+        other = _write_sized_file(cache_dir / "small.bin", 1 * 1024 * 1024, now - 100)
+        cap = 2 * 1024 * 1024
+
+        yt_to_mp3.prune_cache(cache_dir, cap, keep=keep)
+
+        assert not keep.exists()
+        assert not other.exists()
+        assert _cache_total_bytes(cache_dir) <= cap
+
+    def test_prune_does_not_delete_output_mp3s(self, tmp_path):
+        cache_dir = tmp_path / ".cache"
+        output_dir = tmp_path / "output"
+        cache_dir.mkdir()
+        output_dir.mkdir()
+        now = time.time()
+        cached = _write_sized_file(cache_dir / "old.bin", 3 * 1024 * 1024, now - 200)
+        mp3 = _write_sized_file(output_dir / "song__full.mp3", 3 * 1024 * 1024, now - 300)
+        cap = 1 * 1024 * 1024
+
+        yt_to_mp3.prune_cache(cache_dir, cap)
+
+        assert not cached.exists()
+        assert mp3.exists()
+
+    def test_prune_noop_when_already_under_cap(self, tmp_path):
+        cache_dir = tmp_path / ".cache"
+        cache_dir.mkdir()
+        now = time.time()
+        kept = _write_sized_file(cache_dir / "small.bin", 512, now - 10)
+
+        yt_to_mp3.prune_cache(cache_dir, 1024)
+
+        assert kept.exists()
+
+    def test_cli_accepts_cache_max_size_flag(self):
+        parser = yt_to_mp3.build_parser()
+        args = parser.parse_args(
+            ["https://youtube.com/watch?v=abc", "--cache-max-size", "50M"]
+        )
+        assert args.cache_max_size == 50 * 1024**2
+
+    def test_cli_default_cache_max_size_is_3_gib(self):
+        parser = yt_to_mp3.build_parser()
+        args = parser.parse_args(["https://youtube.com/watch?v=abc"])
+        assert args.cache_max_size == 3 * 1024**3
 
 
 # ─────────────────────────────────────────────────────────────────────────────
